@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="SOUNDCOOL converts MMF/SMAF files and renders SF2 plus MIDI to MP3, OGG, or WAV in the browser."
+    />
+    <title>SOUNDCOOL - Audio Converter</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23121514'/%3E%3Crect x='17' y='30' width='7' height='17' rx='3.5' fill='%23df4d47'/%3E%3Crect x='29' y='16' width='7' height='31' rx='3.5' fill='%230f8f84'/%3E%3Crect x='41' y='24' width='7' height='23' rx='3.5' fill='%23d99718'/%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+    <link rel="preconnect" href="https://esm.sh" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./main.js"></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar" aria-label="SOUNDCOOL">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div>
+            <p class="eyebrow">Audio converter</p>
+            <h1>SOUNDCOOL</h1>
+          </div>
+        </div>
+
+        <div class="engine-pill" id="enginePill">
+          <i data-lucide="activity" aria-hidden="true"></i>
+          <span>Engine idle</span>
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="Audio converter">
+        <div class="tool-column">
+          <section class="panel source-panel" aria-labelledby="sourceTitle">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Input</p>
+                <h2 id="sourceTitle">Source files</h2>
+              </div>
+              <button class="icon-button ghost" id="clearButton" type="button" title="Clear files" disabled>
+                <i data-lucide="trash-2" aria-hidden="true"></i>
+                <span class="sr-only">Clear files</span>
+              </button>
+            </div>
+
+            <fieldset class="segmented mode-segmented" aria-label="Input mode">
+              <label>
+                <input type="radio" name="mode" value="smaf" checked />
+                <span>MMF / SMAF</span>
+              </label>
+              <label>
+                <input type="radio" name="mode" value="midi" />
+                <span>SF2 + MIDI</span>
+              </label>
+            </fieldset>
+
+            <label class="drop-zone" id="dropZone" for="fileInput">
+              <input id="fileInput" type="file" accept=".mmf,application/vnd.smaf,audio/x-smaf" multiple />
+              <span class="drop-icon">
+                <i data-lucide="upload" aria-hidden="true"></i>
+              </span>
+              <span class="drop-title" id="dropTitle">Select .mmf files</span>
+              <span class="drop-meta" id="dropMeta">Drop one or many SMAF files</span>
+            </label>
+
+            <div class="sf2-panel" id="sf2Panel" hidden>
+              <label class="field sf2-field">
+                <span>SoundFont</span>
+                <input id="sf2Input" type="file" accept=".sf2,.sf3,.dls,audio/x-soundfont" />
+              </label>
+              <span class="sf2-status" id="sf2Status">No SF2 selected</span>
+            </div>
+
+            <div class="file-strip" id="fileStrip" hidden>
+              <div class="file-icon" aria-hidden="true">
+                <i data-lucide="file-audio"></i>
+              </div>
+              <div class="file-copy">
+                <strong id="fileName"></strong>
+                <span id="fileDetails"></span>
+              </div>
+              <span class="status-chip" id="fileStatus">Ready</span>
+              <ul class="file-list" id="fileList"></ul>
+            </div>
+          </section>
+
+          <section class="panel settings-panel" aria-labelledby="settingsTitle">
+            <div class="panel-heading compact">
+              <div>
+                <p class="eyebrow">Output</p>
+                <h2 id="settingsTitle">Format</h2>
+              </div>
+            </div>
+
+            <fieldset class="segmented" aria-label="Output format">
+              <label>
+                <input type="radio" name="format" value="mp3" checked />
+                <span>MP3</span>
+              </label>
+              <label>
+                <input type="radio" name="format" value="ogg" />
+                <span>OGG</span>
+              </label>
+              <label>
+                <input type="radio" name="format" value="wav" />
+                <span>WAV</span>
+              </label>
+            </fieldset>
+
+            <div class="settings-grid">
+              <label class="field" id="qualityField">
+                <span id="qualityLabel">Bitrate</span>
+                <select id="qualitySelect">
+                  <option value="96k">96 kbps</option>
+                  <option value="128k" selected>128 kbps</option>
+                  <option value="192k">192 kbps</option>
+                  <option value="256k">256 kbps</option>
+                  <option value="320k">320 kbps</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Sample rate</span>
+                <select id="sampleRateSelect">
+                  <option value="auto">Original</option>
+                  <option value="22050">22.05 kHz</option>
+                  <option value="44100" selected>44.1 kHz</option>
+                  <option value="48000">48 kHz</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Channels</span>
+                <select id="channelSelect">
+                  <option value="auto" selected>Original</option>
+                  <option value="1">Mono</option>
+                  <option value="2">Stereo</option>
+                </select>
+              </label>
+
+              <label class="toggle-line">
+                <input type="checkbox" id="normalizeToggle" />
+                <span class="toggle-ui" aria-hidden="true"></span>
+                <span>Normalize</span>
+              </label>
+            </div>
+
+            <button class="primary-action" id="convertButton" type="button" disabled>
+              <i data-lucide="play" aria-hidden="true"></i>
+              <span>Convert</span>
+            </button>
+          </section>
+        </div>
+
+        <div class="tool-column">
+          <section class="panel monitor-panel" aria-labelledby="monitorTitle">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Process</p>
+                <h2 id="monitorTitle">Conversion</h2>
+              </div>
+              <span class="status-chip muted" id="statusText">Waiting</span>
+            </div>
+
+            <div class="visualizer-wrap">
+              <canvas id="visualizer" width="920" height="320" aria-hidden="true"></canvas>
+              <div class="progress-ring" aria-label="Progress">
+                <span id="progressValue">0%</span>
+              </div>
+            </div>
+
+            <div class="progress-track" aria-hidden="true">
+              <span id="progressBar"></span>
+            </div>
+
+            <div class="result-box" id="resultBox" hidden>
+              <div class="result-main">
+                <div class="file-icon success" aria-hidden="true">
+                  <i data-lucide="check"></i>
+                </div>
+                <div class="file-copy">
+                  <strong id="resultName"></strong>
+                  <span id="resultDetails"></span>
+                </div>
+              </div>
+
+              <div class="result-actions">
+                <audio id="audioPreview" controls preload="metadata"></audio>
+                <a class="download-action" id="downloadLink" href="#" download>
+                  <i data-lucide="download" aria-hidden="true"></i>
+                  <span>Download</span>
+                </a>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel log-panel" aria-labelledby="logTitle">
+            <div class="panel-heading compact">
+              <div>
+                <p class="eyebrow">Engine</p>
+                <h2 id="logTitle">Log</h2>
+              </div>
+            </div>
+
+            <ol class="log-list" id="logList" aria-live="polite">
+              <li>SOUNDCOOL ready.</li>
+            </ol>
+          </section>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
