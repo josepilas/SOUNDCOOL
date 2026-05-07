@@ -25,3 +25,8 @@ Then open `http://localhost:5173`.
 For SMAF/MMF, the app first uses its own SMAF parser inspired by the structure used in `vavi-sound`: it reads `MMMD`, finds audio chunks such as `ATR*/Awa*`, `MTR*/Mtsp/Mwa*`, and `EXWV`, decodes Yamaha ADPCM/PCM to PCM in the browser, and synthesizes simple note-only SMAF sequences when there is no embedded audio.
 
 For `SF2 + MIDI`, the app uses SpessaSynth in the browser to render MIDI through the uploaded soundfont. `WAV` can be produced directly; `MP3` and `OGG` use FFmpeg.wasm as the final encoder. Files stay local to the browser.
+
+## References
+
+`https://github.com/umjammer/vavi-sound`
+`https://github.com/spessasus/SpessaSynth`
