@@ -28,5 +28,5 @@ For `SF2 + MIDI`, the app uses SpessaSynth in the browser to render MIDI through
 
 ## References
 
-`https://github.com/umjammer/vavi-sound`
-`https://github.com/spessasus/SpessaSynth`
+https://github.com/umjammer/vavi-sound
+https://github.com/spessasus/SpessaSynth
