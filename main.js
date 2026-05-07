@@ -298,7 +298,7 @@ function updateSourceUi() {
     showStrip = state.midiFiles.length > 0 || Boolean(state.sf2File);
     title = `${state.midiFiles.length} MIDI file${state.midiFiles.length === 1 ? "" : "s"}`;
     detail = state.sf2File
-      ? `${state.sf2File.name} · ${formatBytes(state.sf2File.size)}`
+      ? `${state.sf2File.name} - ${formatBytes(state.sf2File.size)}`
       : "Select one SF2 soundfont";
     status = state.sf2File && state.midiFiles.length > 0 ? "Ready" : "Missing";
     els.sf2Status.textContent = state.sf2File ? trimFileName(state.sf2File.name) : "No SF2 selected";
@@ -316,7 +316,7 @@ function updateSourceUi() {
   } else {
     showStrip = state.smafFiles.length > 0;
     title = `${state.smafFiles.length} SMAF file${state.smafFiles.length === 1 ? "" : "s"}`;
-    detail = `${formatBytes(totalSize(state.smafFiles.map((entry) => entry.file)))} · batch ready`;
+    detail = `${formatBytes(totalSize(state.smafFiles.map((entry) => entry.file)))} - batch ready`;
     status = state.smafFiles.length > 0 ? "Ready" : "Waiting";
     els.dropTitle.textContent =
       state.smafFiles.length > 0 ? `${state.smafFiles.length} SMAF file${state.smafFiles.length === 1 ? "" : "s"}` : "Select .mmf files";
@@ -444,7 +444,7 @@ async function convertSmafFile(entry, format) {
       const wav = encodeWav(pcm.pcm, pcm.sampleRate, pcm.channels, els.qualitySelect.value);
       return {
         blob: new Blob([wav], { type: FORMAT_CONFIG.wav.mime }),
-        detail: `${pcm.details.source} · ${pcm.sampleRate} Hz · ${pcm.channels} ch`,
+        detail: `${pcm.details.source} - ${pcm.sampleRate} Hz - ${pcm.channels} ch`,
         name: outputName,
       };
     }
@@ -453,7 +453,7 @@ async function convertSmafFile(entry, format) {
     const encoded = await encodeWaveWithFfmpeg(wav, format);
     return {
       blob: new Blob([encoded], { type: FORMAT_CONFIG[format].mime }),
-      detail: `${pcm.details.source} · FFmpeg ${format.toUpperCase()} encoder`,
+      detail: `${pcm.details.source} - FFmpeg ${format.toUpperCase()} encoder`,
       name: outputName,
     };
   } catch (error) {
@@ -493,7 +493,7 @@ async function convertMidiFile(file, format) {
   if (format === "wav") {
     return {
       blob: new Blob([rendered.wavBytes], { type: FORMAT_CONFIG.wav.mime }),
-      detail: `SF2+MIDI render · ${sampleRate} Hz · ${channels} ch`,
+      detail: `SF2+MIDI render - ${rendered.sampleRate} Hz - ${rendered.channels} ch`,
       name: outputName,
     };
   }
@@ -501,7 +501,7 @@ async function convertMidiFile(file, format) {
   const encoded = await encodeWaveWithFfmpeg(rendered.wavBytes, format);
   return {
     blob: new Blob([encoded], { type: FORMAT_CONFIG[format].mime }),
-    detail: `SF2+MIDI render · FFmpeg ${format.toUpperCase()} encoder`,
+    detail: `SF2+MIDI render - FFmpeg ${format.toUpperCase()} encoder`,
     name: outputName,
   };
 }
@@ -515,7 +515,7 @@ async function presentOutputs(outputs, format) {
       downloadName: output.name,
       downloadUrl: url,
       previewUrl: url,
-      resultDetails: `${format.toUpperCase()} · ${formatBytes(output.blob.size)} · ${output.detail}`,
+      resultDetails: `${format.toUpperCase()} - ${formatBytes(output.blob.size)} - ${output.detail}`,
       resultName: output.name,
     });
   } else {
@@ -531,7 +531,7 @@ async function presentOutputs(outputs, format) {
       downloadName: `SOUNDCOOL-${format}.zip`,
       downloadUrl: url,
       previewUrl: "",
-      resultDetails: `${outputs.length} files · ZIP · ${format.toUpperCase()} outputs`,
+      resultDetails: `${outputs.length} files - ZIP - ${format.toUpperCase()} outputs`,
       resultName: `SOUNDCOOL-${format}.zip`,
     });
   }
@@ -567,7 +567,7 @@ async function encodeWaveWithFfmpeg(wavBytes, format) {
 
   await safeDelete(ffmpeg, inputFsName);
   await safeDelete(ffmpeg, outputFsName);
-  await ffmpeg.writeFile(inputFsName, wavBytes);
+  await ffmpeg.writeFile(inputFsName, copyBytes(wavBytes));
 
   const args = buildEncodeArgs(inputFsName, outputFsName, format);
   addLog(`ffmpeg ${args.join(" ")}`);
@@ -592,7 +592,7 @@ async function convertWithFfmpegDirect(inputBuffer, format) {
 
   await safeDelete(ffmpeg, inputFsName);
   await safeDelete(ffmpeg, outputFsName);
-  await ffmpeg.writeFile(inputFsName, new Uint8Array(inputBuffer));
+  await ffmpeg.writeFile(inputFsName, copyBytes(inputBuffer));
 
   const args = buildArgs(inputFsName, outputFsName, format);
   addLog(`ffmpeg ${args.join(" ")}`);
@@ -715,6 +715,13 @@ async function safeDelete(ffmpeg, path) {
   }
 }
 
+function copyBytes(bytes) {
+  if (bytes instanceof Uint8Array) {
+    return new Uint8Array(bytes);
+  }
+  return new Uint8Array(bytes.slice(0));
+}
+
 function setBusy(isBusy) {
   state.busy = isBusy;
   els.clearButton.disabled = isBusy || !hasAnyInput();
@@ -803,7 +810,7 @@ function formatError(error) {
     return "The requested encoder is not available in the loaded FFmpeg.wasm build.";
   }
 
-  if (/Invalid data|could not find codec|no audio|no such file|stream/i.test(context)) {
+  if (/Invalid data|could not find codec|could not find codec parameters|error while decoding stream|unsupported codec|no audio|no such file/i.test(context)) {
     return "The source could not be decoded. It may contain an unsupported SMAF or MIDI payload.";
   }
 
