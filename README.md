@@ -1,221 +1,30 @@
 # SOUNDCOOL
 
-Browser-based frontend for decoding, converting, and rendering legacy mobile audio formats and MIDI soundfont playback entirely on the client side.
+Browser frontend for converting `.mmf`/SMAF files, rendering `SF2 + MIDI` files to `MP3`, `OGG`, or `WAV`, and converting `MP3`, `OGG`, or `WAV` audio into `.mmf`.
 
-**SOUNDCOOL supports:**
-- `.mmf` / SMAF decoding and extraction
-- MIDI rendering using `SF2`, `SF3`, and `DLS` soundfonts
-- Export to `WAV`, `MP3`, and `OGG`
-- Local processing with no server upload
+## Run
 
-The project focuses on retro mobile audio preservation, browser-side audio processing, and lightweight multimedia tooling using modern Web APIs, Web Workers, and WebAssembly.
+Serve this folder over HTTP and open `index.html`.
 
----
-
-## Features
-
-### SMAF / MMF Support
-
-- Batch upload for `.mmf` / SMAF files
-- Yamaha ADPCM and PCM decoding directly in the browser
-- Extraction of embedded audio chunks
-- Partial reconstruction of sequence-based SMAF tracks
-- Automatic conversion to playable PCM audio
-
-**Supported chunk families include:**
-- `MMMD`
-- `ATR*`
-- `Awa*`
-- `MTR*`
-- `Mtsp`
-- `Mwa*`
-- `EXWV`
-
-> The parser is inspired by the structure and behavior found in the `vavi-sound` project, but adapted for browser-native execution.
-
----
-
-### MIDI + SoundFont Rendering
-
-- Batch MIDI rendering
-- Support for:
-  - `SF2`
-  - `SF3`
-  - `DLS`
-- Dedicated rendering worker thread
-- Non-blocking UI during synthesis
-- Real-time browser-side audio generation
-
-Rendering is powered by `SpessaSynth Core` running inside a dedicated Web Worker.
-
----
-
-### Export Formats
-
-**Supported output formats:**
-- `WAV`
-- `MP3`
-- `OGG`
-
-#### Encoding Pipeline
-
-| Format | Method |
-|--------|--------|
-| WAV | Direct PCM output |
-| MP3 | FFmpeg.wasm encoding |
-| OGG | FFmpeg.wasm encoding |
-
----
-
-### Batch Processing
-
-- Multiple input files supported simultaneously
-- Automatic ZIP packaging for multi-file exports
-- Single-file exports download directly
-- Original filenames are preserved exactly
-
-**Examples:**
-```text
-SEGA.mmf  -> SEGA.wav
-Theme.mid -> Theme.mp3
-```
-
----
-
-## Architecture
-
-### MMF / SMAF Flow
-
-```text
-MMF / SMAF
-    ↓
-Custom SMAF Parser
-    ↓
-Chunk Extraction
-    ↓
-ADPCM / PCM Decode
-    ↓
-PCM Audio
-    ↓
-Optional Encoding
-    ↓
-WAV / MP3 / OGG
-```
-
-> Sequence-only SMAF files may also generate simplified synthesized playback when embedded audio streams are not present.
-
-### MIDI + SF2 Flow
-
-```text
-MIDI
-    ↓
-SpessaSynth Core
-    ↓
-SoundFont Rendering
-    ↓
-PCM Stream
-    ↓
-FFmpeg.wasm (optional)
-    ↓
-MP3 / OGG / WAV
-```
-
----
-
-## Technical Notes
-
-### Browser-Only Processing
-
-All conversion and rendering happens locally inside the browser.
-
-**Files are:**
-- ❌ Not uploaded
-- ❌ Not transmitted
-- ❌ Not stored remotely
-
-**This allows:**
-- ✅ Offline usage
-- ✅ Lower latency
-- ✅ Improved privacy
-- ✅ Direct local batch conversion
-
----
-
-### Web Technologies Used
-
-- Web Workers
-- WebAssembly
-- FFmpeg.wasm
-- Typed Arrays
-- AudioBuffer APIs
-- Blob/File APIs
-- Client-side ZIP generation
-
----
-
-## Running Locally
-
-Serve the folder through an HTTP server and open `index.html`.
-
-### Python
-```bash
+```powershell
 python -m http.server 5173
 ```
 
-Then open in browser:
-```
-http://localhost:5173
-```
+Then open `http://localhost:5173`.
 
----
+## Features
 
-## Project Goals
+- Batch upload for `.mmf`/SMAF files.
+- Batch upload for MIDI files with one SF2/SF3/DLS soundfont.
+- Batch upload for MP3, OGG, or WAV files to MMF/SMAF PCM audio.
+- Single-file outputs download directly.
+- Multi-file outputs are packaged as a ZIP.
+- Output filenames preserve the original base name exactly: `SEGA.mmf` becomes `SEGA.wav`, `Theme.mid` becomes `Theme.mp3`, and `tone.mp3` becomes `tone.mmf`.
 
-**SOUNDCOOL exists primarily as:**
-1. A retro mobile audio preservation tool
-2. A browser-native multimedia experiment
-3. A lightweight local audio workstation for legacy formats
+## Conversion
 
-The project intentionally avoids backend dependencies and performs all heavy processing client-side.
+For SMAF/MMF, the app first uses its own SMAF parser inspired by the structure used in `vavi-sound`: it reads `MMMD`, finds audio chunks such as `ATR*/Awa*`, `MTR*/Mtsp/Mwa*`, and `EXWV`, decodes Yamaha ADPCM/PCM to PCM in the browser, and synthesizes simple note-only SMAF sequences when there is no embedded audio.
 
----
+For `SF2 + MIDI`, the app uses SpessaSynth Core inside a dedicated Web Worker to render MIDI through the uploaded soundfont without blocking the page. `WAV` can be produced directly; `MP3` and `OGG` use FFmpeg.wasm as the final encoder. Files stay local to the browser.
 
-## Limitations
-
-### MMF / SMAF Complexity
-
-SMAF is not a single standardized audio structure.
-
-**Some files may contain:**
-- Note sequences
-- Yamaha ADPCM streams
-- PCM audio
-- Proprietary chunks
-- Hybrid structures
-
-**As a result:**
-- Compatibility varies between files
-- Some sequence reconstruction may be approximate
-- Certain proprietary chunks may be ignored
-
-### MIDI Instrument Mapping
-
-Some SMAF instrument mappings do not directly correspond to General MIDI standards.
-
-**This may result in:**
-- Incorrect instruments
-- Altered playback timbre
-- Simplified playback behavior
-
----
-
-## References
-
-### vavi-sound
-- **Repository:** https://github.com/umjammer/vavi-sound
-- Reference implementation and structural inspiration for SMAF parsing behavior.
-
-### SpessaSynth
-- **Repository:** https://github.com/spessasus/SpessaSynth
-- Browser-side MIDI synthesizer used for SoundFont rendering.
-```
+For `Audio -> MMF`, the app decodes MP3, OGG, or WAV with Web Audio, then sends channel mixing, resampling, normalization, and SMAF writing to a dedicated Web Worker so longer files do not lock the page. The output is a minimal `MMMD/ATR0/Awa0` SMAF PCM container. Lower sample rates, mono, and 8-bit PCM reduce MMF size.

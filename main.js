@@ -1,5 +1,15 @@
-import { convertSmafToPcm, encodeWav, inspectSmaf } from "./smaf-engine.js";
+import {
+  convertSmafToPcm,
+  encodeWav,
+  inspectSmaf,
+  SMAF_PCM_SAMPLE_RATES,
+} from "./smaf-engine.js";
+import { renderAudioBufferToMmf } from "./audio-mmf-engine.js";
 import { renderMidiWithSoundFont } from "./midi-engine.js";
+
+const STANDARD_SAMPLE_RATES = ["auto", "22050", "44100", "48000"];
+const MMF_SAMPLE_RATES = ["auto", "8000", "11000", "22050", "44100"];
+const MAX_MMF_AUDIO_BYTES = 96 * 1024 * 1024;
 
 const CDN = {
   ffmpeg: "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js",
@@ -43,6 +53,15 @@ const FORMAT_CONFIG = {
     ],
     defaultQuality: "pcm_s16le",
   },
+  mmf: {
+    mime: "application/vnd.smaf",
+    qualityLabel: "PCM depth",
+    qualityOptions: [
+      ["pcm_s16be", "16-bit PCM"],
+      ["pcm_s8", "8-bit PCM"],
+    ],
+    defaultQuality: "pcm_s16be",
+  },
 };
 
 const els = {
@@ -61,6 +80,7 @@ const els = {
   fileName: document.querySelector("#fileName"),
   fileStatus: document.querySelector("#fileStatus"),
   fileStrip: document.querySelector("#fileStrip"),
+  formatOptions: [...document.querySelectorAll("[data-format-option]")],
   formatRadios: [...document.querySelectorAll('input[name="format"]')],
   logList: document.querySelector("#logList"),
   modeRadios: [...document.querySelectorAll('input[name="mode"]')],
@@ -82,6 +102,7 @@ const els = {
 };
 
 const state = {
+  audioFiles: [],
   busy: false,
   conversionSeed: 3,
   ffmpeg: null,
@@ -103,7 +124,6 @@ boot();
 function boot() {
   setupIcons();
   setupEvents();
-  updateQualityOptions();
   setMode("smaf", { keepFiles: true });
   setProgress(0);
   drawVisualizer();
@@ -181,16 +201,27 @@ function setMode(mode, options = {}) {
     clearSelection({ keepMode: true });
   }
 
-  els.sourceTitle.textContent = mode === "midi" ? "SoundFont and MIDI" : "Source files";
+  els.sourceTitle.textContent =
+    mode === "midi" ? "SoundFont and MIDI" : mode === "audio" ? "Audio to MMF" : "Source files";
   els.sf2Panel.hidden = mode !== "midi";
   els.fileInput.accept =
     mode === "midi"
       ? ".mid,.midi,.rmi,audio/midi,audio/x-midi"
-      : ".mmf,application/vnd.smaf,audio/x-smaf";
-  els.dropTitle.textContent = mode === "midi" ? "Select MIDI files" : "Select .mmf files";
+      : mode === "audio"
+        ? ".mp3,.wav,.ogg,audio/mpeg,audio/wav,audio/ogg,audio/x-wav"
+        : ".mmf,application/vnd.smaf,audio/x-smaf";
+  els.dropTitle.textContent =
+    mode === "midi" ? "Select MIDI files" : mode === "audio" ? "Select audio files" : "Select .mmf files";
   els.dropMeta.textContent =
-    mode === "midi" ? "Drop MIDI files, plus SF2 if you want" : "Drop one or many SMAF files";
+    mode === "midi"
+      ? "Drop MIDI files, plus SF2 if you want"
+      : mode === "audio"
+        ? "Drop MP3, OGG, or WAV files"
+        : "Drop one or many SMAF files";
 
+  updateFormatOptions();
+  updateSampleRateOptions();
+  updateQualityOptions();
   updateSourceUi();
   updateConvertButton();
 }
@@ -213,6 +244,20 @@ async function handlePrimaryFiles(files) {
       addLog("Some dropped files were ignored because they are not MIDI or SF2 files.");
     }
     addLog(midiFiles.length > 0 ? `${midiFiles.length} MIDI file(s) queued.` : "No MIDI files selected.");
+    updateSourceUi();
+    updateConvertButton();
+    return;
+  }
+
+  if (state.mode === "audio") {
+    const audioFiles = files.filter(isAudioFile);
+    state.audioFiles = audioFiles;
+
+    if (files.length > audioFiles.length) {
+      addLog("Some selected files were ignored because they are not MP3, OGG, or WAV files.");
+    }
+
+    addLog(audioFiles.length > 0 ? `${audioFiles.length} audio file(s) queued.` : "No audio files selected.");
     updateSourceUi();
     updateConvertButton();
     return;
@@ -262,6 +307,9 @@ function handleDroppedFiles(files) {
   if (hasMidiModeFile && state.mode !== "midi") {
     els.modeRadios.find((radio) => radio.value === "midi").checked = true;
     setMode("midi");
+  } else if (files.some(isAudioFile) && state.mode !== "audio") {
+    els.modeRadios.find((radio) => radio.value === "audio").checked = true;
+    setMode("audio");
   }
 
   handlePrimaryFiles(files);
@@ -269,6 +317,7 @@ function handleDroppedFiles(files) {
 
 function clearSelection(options = {}) {
   revokeOutput();
+  state.audioFiles = [];
   state.midiFiles = [];
   state.sf2Buffer = null;
   state.sf2File = null;
@@ -313,6 +362,18 @@ function updateSourceUi() {
     for (const file of state.midiFiles) {
       items.push({ detail: formatBytes(file.size), name: file.name });
     }
+  } else if (state.mode === "audio") {
+    showStrip = state.audioFiles.length > 0;
+    title = `${state.audioFiles.length} audio file${state.audioFiles.length === 1 ? "" : "s"}`;
+    detail = `${formatBytes(totalSize(state.audioFiles))} - MMF output`;
+    status = state.audioFiles.length > 0 ? "Ready" : "Waiting";
+    els.dropTitle.textContent =
+      state.audioFiles.length > 0 ? `${state.audioFiles.length} audio file${state.audioFiles.length === 1 ? "" : "s"}` : "Select audio files";
+    els.dropMeta.textContent = state.audioFiles.length > 0 ? "Ready for MMF encoding" : "Drop MP3, OGG, or WAV files";
+
+    for (const file of state.audioFiles) {
+      items.push({ detail: formatBytes(file.size), name: file.name });
+    }
   } else {
     showStrip = state.smafFiles.length > 0;
     title = `${state.smafFiles.length} SMAF file${state.smafFiles.length === 1 ? "" : "s"}`;
@@ -352,6 +413,48 @@ function renderFileList(items) {
   );
 }
 
+function updateFormatOptions() {
+  const audioMode = state.mode === "audio";
+  const allowed = audioMode ? new Set(["mmf"]) : new Set(["mp3", "ogg", "wav"]);
+
+  for (const option of els.formatOptions) {
+    const value = option.dataset.formatOption;
+    option.hidden = !allowed.has(value);
+    const input = option.querySelector("input");
+    if (input) input.disabled = !allowed.has(value);
+  }
+
+  const current = getFormat();
+  if (!allowed.has(current)) {
+    const next = audioMode ? "mmf" : "mp3";
+    const input = els.formatRadios.find((radio) => radio.value === next);
+    if (input) input.checked = true;
+  }
+}
+
+function updateSampleRateOptions() {
+  const current = els.sampleRateSelect.value;
+  const values = state.mode === "audio" ? MMF_SAMPLE_RATES : STANDARD_SAMPLE_RATES;
+  const labels = {
+    8000: "8 kHz",
+    11000: "11 kHz",
+    22050: "22.05 kHz",
+    44100: "44.1 kHz",
+    48000: "48 kHz",
+    auto: "Original",
+  };
+
+  els.sampleRateSelect.replaceChildren(
+    ...values.map((value) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = labels[value];
+      option.selected = value === current || (!values.includes(current) && value === "44100");
+      return option;
+    }),
+  );
+}
+
 function updateQualityOptions() {
   const config = FORMAT_CONFIG[getFormat()];
   els.qualityLabel.textContent = config.qualityLabel;
@@ -370,7 +473,9 @@ function updateConvertButton() {
   const canConvert =
     state.mode === "midi"
       ? Boolean(state.sf2File && state.sf2Buffer && state.midiFiles.length > 0)
-      : state.smafFiles.length > 0;
+      : state.mode === "audio"
+        ? state.audioFiles.length > 0
+        : state.smafFiles.length > 0;
   els.convertButton.disabled = state.busy || !canConvert;
 }
 
@@ -378,7 +483,7 @@ async function convertFiles() {
   if (state.busy) return;
 
   const format = getFormat();
-  const jobs = state.mode === "midi" ? state.midiFiles : state.smafFiles;
+  const jobs = state.mode === "midi" ? state.midiFiles : state.mode === "audio" ? state.audioFiles : state.smafFiles;
   if (jobs.length === 0) return;
 
   setBusy(true);
@@ -394,7 +499,7 @@ async function convertFiles() {
       state.progressBase = (index / jobs.length) * 100;
       state.progressSpan = 100 / jobs.length;
       const job = jobs[index];
-      const file = state.mode === "midi" ? job : job.file;
+      const file = state.mode === "midi" || state.mode === "audio" ? job : job.file;
 
       addLog(`Converting ${index + 1}/${jobs.length}: ${file.name}`);
       setStatus(`Converting ${index + 1}/${jobs.length}`, "muted");
@@ -403,7 +508,9 @@ async function convertFiles() {
       const output =
         state.mode === "midi"
           ? await convertMidiFile(job, format)
-          : await convertSmafFile(job, format);
+          : state.mode === "audio"
+            ? await convertAudioFile(job)
+            : await convertSmafFile(job, format);
       outputs.push(output);
       setScopedProgress(1);
     }
@@ -506,6 +613,85 @@ async function convertMidiFile(file, format) {
   };
 }
 
+async function convertAudioFile(file) {
+  const outputName = outputNameFromInput(file.name, "mmf");
+  const bits = els.qualitySelect.value === "pcm_s8" ? 8 : 16;
+
+  setEnginePill("loading", "Audio decoder");
+  setStatus("Decoding audio", "muted");
+  setScopedProgress(0.08);
+
+  const arrayBuffer = await file.arrayBuffer();
+  const audioBuffer = await decodeAudioBuffer(arrayBuffer);
+  setScopedProgress(0.28);
+
+  const sampleRate = resolveMmfSampleRate(els.sampleRateSelect.value, audioBuffer.sampleRate);
+  const channels = resolveAudioChannels(els.channelSelect.value, audioBuffer.numberOfChannels);
+  const estimatedBytes = estimateMmfOutputBytes(audioBuffer.length, audioBuffer.sampleRate, sampleRate, channels, bits);
+
+  if (estimatedBytes > MAX_MMF_AUDIO_BYTES) {
+    throw new Error("The MMF would be too large. Try mono, 8-bit PCM, or a lower sample rate.");
+  }
+
+  setEnginePill("loading", "MMF worker");
+  setStatus("Encoding MMF", "muted");
+
+  const rendered = await renderAudioBufferToMmf(audioBuffer, {
+    bits,
+    channels,
+    name: file.name,
+    normalize: els.normalizeToggle.checked,
+    onProgress: (progress) => setScopedProgress(0.3 + progress * 0.62),
+    sampleRate,
+  });
+  setScopedProgress(0.94);
+  addLog(`Audio encoded to MMF: ${file.name}.`);
+
+  return {
+    blob: new Blob([rendered.mmfBytes], { type: FORMAT_CONFIG.mmf.mime }),
+    detail: `PCM ${rendered.bits}-bit - ${rendered.sampleRate} Hz - ${rendered.channels} ch`,
+    name: outputName,
+    preview: false,
+  };
+}
+
+async function decodeAudioBuffer(arrayBuffer) {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) {
+    throw new Error("Web Audio decoding is not available in this browser.");
+  }
+
+  const context = new AudioContextClass();
+  try {
+    return await context.decodeAudioData(arrayBuffer.slice(0));
+  } finally {
+    await context.close?.();
+  }
+}
+
+function resolveMmfSampleRate(value, sourceRate) {
+  if (value !== "auto") {
+    return nearestSmafSampleRate(Number(value) || sourceRate);
+  }
+  return nearestSmafSampleRate(sourceRate);
+}
+
+function estimateMmfOutputBytes(sourceFrames, sourceRate, sampleRate, channels, bits) {
+  const frameCount = Math.max(1, Math.round((sourceFrames * sampleRate) / sourceRate));
+  return frameCount * channels * (bits / 8) + 30;
+}
+
+function nearestSmafSampleRate(sampleRate) {
+  return SMAF_PCM_SAMPLE_RATES.reduce((best, candidate) =>
+    Math.abs(candidate - sampleRate) < Math.abs(best - sampleRate) ? candidate : best,
+  );
+}
+
+function resolveAudioChannels(value, sourceChannels) {
+  if (value === "1" || value === "2") return Number(value);
+  return sourceChannels > 1 ? 2 : 1;
+}
+
 async function presentOutputs(outputs, format) {
   if (outputs.length === 1) {
     const [output] = outputs;
@@ -514,7 +700,7 @@ async function presentOutputs(outputs, format) {
     setResult({
       downloadName: output.name,
       downloadUrl: url,
-      previewUrl: url,
+      previewUrl: output.preview === false ? "" : url,
       resultDetails: `${format.toUpperCase()} - ${formatBytes(output.blob.size)} - ${output.detail}`,
       resultName: output.name,
     });
@@ -737,6 +923,9 @@ function setBusy(isBusy) {
   els.sampleRateSelect.disabled = isBusy;
   els.channelSelect.disabled = isBusy;
   els.normalizeToggle.disabled = isBusy;
+  if (!isBusy) {
+    updateFormatOptions();
+  }
   updateConvertButton();
 }
 
@@ -810,6 +999,10 @@ function formatError(error) {
     return "The requested encoder is not available in the loaded FFmpeg.wasm build.";
   }
 
+  if (/decodeAudioData|Unable to decode audio data|Web Audio decoding|media resource/i.test(context)) {
+    return "The audio source could not be decoded by this browser.";
+  }
+
   if (/Invalid data|could not find codec|could not find codec parameters|error while decoding stream|unsupported codec|no audio|no such file/i.test(context)) {
     return "The source could not be decoded. It may contain an unsupported SMAF or MIDI payload.";
   }
@@ -851,7 +1044,7 @@ function getMode() {
 }
 
 function hasAnyInput() {
-  return state.smafFiles.length > 0 || state.midiFiles.length > 0 || Boolean(state.sf2File);
+  return state.smafFiles.length > 0 || state.midiFiles.length > 0 || state.audioFiles.length > 0 || Boolean(state.sf2File);
 }
 
 function isSmafFile(file) {
@@ -864,6 +1057,10 @@ function isMidiFile(file) {
 
 function isSoundFontFile(file) {
   return /\.(sf2|sf3|dls)$/i.test(file.name);
+}
+
+function isAudioFile(file) {
+  return /\.(mp3|wav|ogg)$/i.test(file.name);
 }
 
 function totalSize(files) {

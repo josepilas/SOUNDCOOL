@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="SOUNDCOOL converts MMF/SMAF files and renders SF2 plus MIDI to MP3, OGG, or WAV in the browser."
+      content="SOUNDCOOL converts MMF/SMAF files, renders SF2 plus MIDI, and turns MP3, OGG, or WAV into MMF in the browser."
     />
     <title>SOUNDCOOL - Audio Converter</title>
     <link
@@ -61,6 +61,10 @@
                 <input type="radio" name="mode" value="midi" />
                 <span>SF2 + MIDI</span>
               </label>
+              <label>
+                <input type="radio" name="mode" value="audio" />
+                <span>Audio -> MMF</span>
+              </label>
             </fieldset>
 
             <label class="drop-zone" id="dropZone" for="fileInput">
@@ -101,18 +105,22 @@
               </div>
             </div>
 
-            <fieldset class="segmented" aria-label="Output format">
-              <label>
+            <fieldset class="segmented format-segmented" aria-label="Output format">
+              <label data-format-option="mp3">
                 <input type="radio" name="format" value="mp3" checked />
                 <span>MP3</span>
               </label>
-              <label>
+              <label data-format-option="ogg">
                 <input type="radio" name="format" value="ogg" />
                 <span>OGG</span>
               </label>
-              <label>
+              <label data-format-option="wav">
                 <input type="radio" name="format" value="wav" />
                 <span>WAV</span>
+              </label>
+              <label data-format-option="mmf" hidden>
+                <input type="radio" name="format" value="mmf" />
+                <span>MMF</span>
               </label>
             </fieldset>
 

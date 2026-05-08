@@ -3,7 +3,7 @@ const TIME_BASE_TABLE = [
 ];
 
 const FORMAT_TYPE_SIZE = [2, 16, 16, 32];
-const AWA_SAMPLE_RATES = [4000, 8000, 11000, 22050, 44100];
+export const SMAF_PCM_SAMPLE_RATES = [4000, 8000, 11000, 22050, 44100];
 const MWA_FORMAT_TABLE = [4, 5, 1];
 
 const WAVE_FORMAT = {
@@ -662,6 +662,38 @@ function resamplePcm(pcm, fromRate, toRate, channels) {
   return output;
 }
 
+export function encodeSmafFromPcm(pcm, sampleRate, channels, options = {}) {
+  const safeChannels = channels === 2 ? 2 : 1;
+  const bits = Number(options.bits) === 8 ? 8 : 16;
+  const sampleRateIndex = SMAF_PCM_SAMPLE_RATES.indexOf(sampleRate);
+
+  if (sampleRateIndex < 0) {
+    throw new Error(`SMAF PCM output supports ${SMAF_PCM_SAMPLE_RATES.join(", ")} Hz only.`);
+  }
+
+  if (pcm.length % safeChannels !== 0) {
+    throw new Error("PCM sample count does not match the requested channel count.");
+  }
+
+  const audioData = bits === 8 ? signed8BytesFromPcm(pcm) : int16BigEndianBytesFromPcm(pcm);
+  const waveType =
+    (safeChannels === 2 ? 0x8000 : 0) |
+    (WAVE_FORMAT.SIGNED_PCM << 12) |
+    (sampleRateIndex << 8) |
+    (((bits / 4 - 1) & 0x0f) << 4);
+  const trackHeader = new Uint8Array(6);
+  const headerView = new DataView(trackHeader.buffer);
+  trackHeader[0] = 0;
+  trackHeader[1] = 0;
+  headerView.setUint16(2, waveType, false);
+  trackHeader[4] = 0;
+  trackHeader[5] = 0;
+
+  const awaChunk = writeChunk("Awa0", audioData);
+  const atrChunk = writeChunk("ATR0", concatBytes([trackHeader, awaChunk]));
+  return writeChunk("MMMD", atrChunk);
+}
+
 function convertChannels(pcm, fromChannels, toChannels) {
   if (fromChannels === toChannels) return pcm;
   const frames = Math.floor(pcm.length / fromChannels);
@@ -702,7 +734,7 @@ function decodeAwaWaveType(value) {
     bits: 4 * (((value & 0x00f0) >> 4) + 1),
     channels: (value & 0x8000) ? 2 : 1,
     format: (value & 0x7000) >> 12,
-    sampleRate: AWA_SAMPLE_RATES[index] || 8000,
+    sampleRate: SMAF_PCM_SAMPLE_RATES[index] || 8000,
   };
 }
 
@@ -786,6 +818,21 @@ function int16BytesFromPcm(pcm) {
   return bytes;
 }
 
+function int16BigEndianBytesFromPcm(pcm) {
+  const bytes = new Uint8Array(pcm.length * 2);
+  const view = new DataView(bytes.buffer);
+  for (let i = 0; i < pcm.length; i += 1) view.setInt16(i * 2, pcm[i], false);
+  return bytes;
+}
+
+function signed8BytesFromPcm(pcm) {
+  const bytes = new Uint8Array(pcm.length);
+  for (let i = 0; i < pcm.length; i += 1) {
+    bytes[i] = (clamp16(pcm[i]) >> 8) & 0xff;
+  }
+  return bytes;
+}
+
 function int24BytesFromPcm(pcm) {
   const bytes = new Uint8Array(pcm.length * 3);
   for (let i = 0; i < pcm.length; i += 1) {
@@ -806,6 +853,33 @@ function float32BytesFromPcm(pcm) {
 
 function writeAscii(view, offset, text) {
   for (let i = 0; i < text.length; i += 1) view.setUint8(offset + i, text.charCodeAt(i));
+}
+
+function writeChunk(id, payload) {
+  if (id.length !== 4) {
+    throw new Error("SMAF chunk IDs must be four ASCII characters.");
+  }
+  if (payload.length > 0xffffffff) {
+    throw new Error("SMAF chunk is too large.");
+  }
+
+  const output = new Uint8Array(8 + payload.length);
+  const view = new DataView(output.buffer);
+  writeAscii(view, 0, id);
+  view.setUint32(4, payload.length, false);
+  output.set(payload, 8);
+  return output;
+}
+
+function concatBytes(parts) {
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const output = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    output.set(part, offset);
+    offset += part.length;
+  }
+  return output;
 }
 
 function ascii(bytes, offset, length) {
